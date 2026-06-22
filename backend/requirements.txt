@@ -8,3 +8,5 @@ pymysql
 PyJWT
 uuid
 python_alipay_sdk
+openai
+pytest
