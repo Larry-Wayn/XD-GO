@@ -1,5 +1,71 @@
 <template>
   <div class="sales-data-container">
+    <!-- AI 运营洞察 -->
+    <el-card class="insight-card" shadow="hover">
+      <template #header>
+        <div class="card-header">
+          <div class="insight-title">
+            <span>AI 运营洞察</span>
+            <el-tag v-if="insightMeta.source" :type="sourceTagType" size="small">
+              {{ insightMeta.source === 'openai' ? 'OpenAI' : 'Fallback' }}
+            </el-tag>
+          </div>
+          <span class="insight-meta" v-if="insightMeta.generatedAt">
+            {{ insightMeta.windowDays }} 天分析 · {{ insightMeta.generatedAt }}
+          </span>
+        </div>
+      </template>
+
+      <el-skeleton v-if="insightLoading" :rows="4" animated />
+      <el-alert
+        v-else-if="insightError"
+        type="warning"
+        :title="insightError"
+        show-icon
+        :closable="false"
+      />
+      <el-empty
+        v-else-if="!insightBriefing && !insightCards.length"
+        description="暂无足够数据生成运营洞察"
+      />
+      <div v-else class="insight-content">
+        <div class="briefing-box">
+          {{ insightBriefing }}
+        </div>
+        <el-row :gutter="16" class="action-card-row">
+          <el-col
+            v-for="card in insightCards"
+            :key="`${card.metric}-${card.title}`"
+            :xs="24"
+            :sm="12"
+            :lg="8"
+          >
+            <el-card class="action-card" shadow="never">
+              <div class="action-card-header">
+                <span>{{ card.title }}</span>
+                <el-tag :type="priorityTagType(card.priority)" size="small">
+                  {{ priorityText(card.priority) }}
+                </el-tag>
+              </div>
+              <p class="recommendation">{{ card.recommendation }}</p>
+              <p class="reason">{{ card.reason }}</p>
+              <div class="evidence-list">
+                <el-tag
+                  v-for="item in card.evidence"
+                  :key="item"
+                  class="evidence-tag"
+                  size="small"
+                  effect="plain"
+                >
+                  {{ item }}
+                </el-tag>
+              </div>
+            </el-card>
+          </el-col>
+        </el-row>
+      </div>
+    </el-card>
+
     <!-- 当日销售数据卡片 -->
     <el-row :gutter="20" class="today-stats">
       <el-col :span="8">
@@ -83,8 +149,8 @@
 </template>
 
 <script>
-import { ref, onMounted, reactive } from 'vue'
-import { getSalesData } from '@/api/seller'
+import { ref, onMounted, reactive, computed } from 'vue'
+import { getSalesData, getSellerInsights } from '@/api/seller'
 import * as echarts from 'echarts'
 
 export default {
@@ -102,6 +168,29 @@ export default {
     
     const topProducts = ref([])
     const historyData = ref([])
+    const insightLoading = ref(false)
+    const insightError = ref('')
+    const insightBriefing = ref('')
+    const insightCards = ref([])
+    const insightMeta = reactive({
+      source: '',
+      generatedAt: '',
+      windowDays: 30
+    })
+
+    const sourceTagType = computed(() => insightMeta.source === 'openai' ? 'success' : 'info')
+
+    const priorityTagType = priority => {
+      if (priority === 'high') return 'danger'
+      if (priority === 'medium') return 'warning'
+      return 'info'
+    }
+
+    const priorityText = priority => {
+      if (priority === 'high') return '高优先级'
+      if (priority === 'medium') return '中优先级'
+      return '低优先级'
+    }
 
     // 初始化图表
     const initChart = () => {
@@ -183,14 +272,37 @@ export default {
       }
     }
 
+    // 获取 AI 运营洞察
+    const fetchSellerInsights = async () => {
+      insightLoading.value = true
+      insightError.value = ''
+      try {
+        const response = await getSellerInsights({ days: timeRange.value })
+        if (response.code === 200 && response.data) {
+          insightBriefing.value = response.data.briefing || ''
+          insightCards.value = response.data.cards || []
+          Object.assign(insightMeta, response.data.meta || {})
+        } else {
+          insightError.value = response.message || 'AI 运营洞察暂不可用'
+        }
+      } catch (error) {
+        console.error('获取 AI 运营洞察失败:', error)
+        insightError.value = 'AI 运营洞察暂不可用，原有销售数据仍可继续查看。'
+      } finally {
+        insightLoading.value = false
+      }
+    }
+
     // 处理时间范围变化
     const handleTimeRangeChange = () => {
       fetchSalesData()
+      fetchSellerInsights()
     }
 
     onMounted(() => {
       initChart()
       fetchSalesData()
+      fetchSellerInsights()
       
       // 监听窗口大小变化，重绘图表
       window.addEventListener('resize', () => {
@@ -203,6 +315,14 @@ export default {
       todayData,
       topProducts,
       salesChart,
+      insightLoading,
+      insightError,
+      insightBriefing,
+      insightCards,
+      insightMeta,
+      sourceTagType,
+      priorityTagType,
+      priorityText,
       handleTimeRangeChange
     }
   }
@@ -212,6 +332,76 @@ export default {
 <style scoped>
 .sales-data-container {
   padding: 20px;
+}
+
+.insight-card {
+  margin-bottom: 20px;
+}
+
+.insight-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+}
+
+.insight-meta {
+  color: #909399;
+  font-size: 13px;
+}
+
+.insight-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.briefing-box {
+  line-height: 1.7;
+  color: #303133;
+  background: #f5f7fa;
+  border-left: 4px solid #409EFF;
+  padding: 14px 16px;
+  border-radius: 4px;
+}
+
+.action-card-row {
+  row-gap: 16px;
+}
+
+.action-card {
+  height: 100%;
+  border: 1px solid #ebeef5;
+}
+
+.action-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+}
+
+.recommendation {
+  margin: 12px 0 8px;
+  color: #303133;
+  line-height: 1.6;
+}
+
+.reason {
+  color: #606266;
+  line-height: 1.6;
+  margin: 0 0 12px;
+}
+
+.evidence-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.evidence-tag {
+  margin: 0;
 }
 
 .today-stats {
