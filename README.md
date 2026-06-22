@@ -7,6 +7,27 @@ XD-GO 是一款基于 Python Flask 框架的在线购物网站，主要面向个
 - 买家购物流程：用户注册、登录、浏览商品、加入购物车、发起订单、支付、查看订单列表与状态（TODO: 评价商品）。
 - 卖家管理流程：商家注册、登录、发布商品、管理商品、管理订单（TODO: 处理评价）。
 
+## FDE 作品增强：Seller Sales Insight Copilot
+
+本分支加入了一个面向 FDE 面试展示的 AI 转型功能：卖家端 Sales Insight Copilot。卖家进入销售数据页后，系统会分析近 7 / 30 / 90 天的订单、销售额、商品库存、热销商品和滞销风险，并在原有图表上方展示：
+
+- AI 运营简报：用自然语言总结当前店铺经营状态。
+- 优先行动卡片：给出待发货处理、补货、滞销品促活、核心商品保护等可执行建议。
+- 证据指标：每张卡片附带订单数、库存、销量、收入占比等数字依据。
+- 稳定 fallback：未配置 OpenAI API key、网络失败或模型输出不合法时，自动使用本地规则生成同结构结果。
+
+### OpenAI 配置
+
+后端只从环境变量读取 API key，不会把 key 暴露给前端或提交到仓库。
+
+```bash
+OPENAI_API_KEY=your_api_key_here
+OPENAI_MODEL=gpt-5.4-mini
+OPENAI_TIMEOUT_SECONDS=8
+```
+
+如果不设置 `OPENAI_API_KEY`，接口 `GET /api/sell_order/insights?days=30` 会返回 `meta.source = "fallback"` 的稳定演示结果。
+
 ## 我们如何开发协作
 
 - 前后端分离：前端和后端通过 API 完全分离开发，后端提供 RESTful API，前端通过 Axios 或 Fetch 调用。
@@ -181,7 +202,7 @@ CREATE TABLE orderitem (
 4. **购物车表（Cart）**：买家的购物车信息。
 5. **购物车商品表（CartItem）**：存储购物车中每个商品的详细信息。
 6. **订单表（Order）**：买家创建的订单信息，并通过 `sellerid` 关联卖家。
-7. **订单商品表（OrderItem）**：存储订单中每个商品的详细信息。
+7. **订单商品表（OrderItem）**：存储订单中每个订单包含的商品信息。
 
 ### 表之间的关系
 
