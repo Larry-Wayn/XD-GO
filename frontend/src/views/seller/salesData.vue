@@ -40,7 +40,7 @@
             :sm="12"
             :lg="8"
           >
-            <el-card class="action-card" shadow="never">
+            <div class="action-card">
               <div class="action-card-header">
                 <span>{{ card.title }}</span>
                 <el-tag :type="priorityTagType(card.priority)" size="small">
@@ -60,7 +60,7 @@
                   {{ item }}
                 </el-tag>
               </div>
-            </el-card>
+            </div>
           </el-col>
         </el-row>
       </div>
@@ -192,6 +192,16 @@ export default {
       return '低优先级'
     }
 
+    const resetInsightState = () => {
+      insightBriefing.value = ''
+      insightCards.value = []
+      Object.assign(insightMeta, {
+        source: '',
+        generatedAt: '',
+        windowDays: Number(timeRange.value)
+      })
+    }
+
     // 初始化图表
     const initChart = () => {
       if (salesChart.value) {
@@ -276,6 +286,7 @@ export default {
     const fetchSellerInsights = async () => {
       insightLoading.value = true
       insightError.value = ''
+      resetInsightState()
       try {
         const response = await getSellerInsights({ days: timeRange.value })
         if (response.code === 200 && response.data) {
@@ -372,6 +383,10 @@ export default {
 .action-card {
   height: 100%;
   border: 1px solid #ebeef5;
+  border-radius: 6px;
+  padding: 16px;
+  background: #fff;
+  box-sizing: border-box;
 }
 
 .action-card-header {
@@ -436,4 +451,4 @@ export default {
 .top-products {
   margin-bottom: 20px;
 }
-</style> 
+</style>
