@@ -7,7 +7,7 @@
           <div class="insight-title">
             <span>AI 运营洞察</span>
             <el-tag v-if="insightMeta.source" :type="sourceTagType" size="small">
-              {{ insightMeta.source === 'openai' ? 'OpenAI' : 'Fallback' }}
+              {{ sourceLabel }}
             </el-tag>
           </div>
           <span class="insight-meta" v-if="insightMeta.generatedAt">
@@ -178,7 +178,14 @@ export default {
       windowDays: 30
     })
 
-    const sourceTagType = computed(() => insightMeta.source === 'openai' ? 'success' : 'info')
+    const sourceLabel = computed(() => {
+      if (insightMeta.source === 'deepseek') return 'DeepSeek'
+      if (insightMeta.source === 'openai') return 'OpenAI'
+      if (insightMeta.source === 'fallback') return 'Fallback'
+      return insightMeta.source
+    })
+
+    const sourceTagType = computed(() => insightMeta.source === 'fallback' ? 'info' : 'success')
 
     const priorityTagType = priority => {
       if (priority === 'high') return 'danger'
@@ -331,6 +338,7 @@ export default {
       insightBriefing,
       insightCards,
       insightMeta,
+      sourceLabel,
       sourceTagType,
       priorityTagType,
       priorityText,
