@@ -391,3 +391,12 @@ export function getSalesData(params) {
     params,
   })
 }
+
+// 获取 AI 运营洞察
+export function getSellerInsights(params) {
+  return request({
+    url: '/api/sell_order/insights',
+    method: 'get',
+    params,
+  })
+}
