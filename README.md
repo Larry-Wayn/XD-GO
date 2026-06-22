@@ -14,19 +14,19 @@ XD-GO 是一款基于 Python Flask 框架的在线购物网站，主要面向个
 - AI 运营简报：用自然语言总结当前店铺经营状态。
 - 优先行动卡片：给出待发货处理、补货、滞销品促活、核心商品保护等可执行建议。
 - 证据指标：每张卡片附带订单数、库存、销量、收入占比等数字依据。
-- 稳定 fallback：未配置 OpenAI API key、网络失败或模型输出不合法时，自动使用本地规则生成同结构结果。
+- 稳定 fallback：未配置 DeepSeek API key、网络失败或模型输出不合法时，自动使用本地规则生成同结构结果。
 
-### OpenAI 配置
+### DeepSeek / OpenRouter 配置
 
 后端只从环境变量读取 API key，不会把 key 暴露给前端或提交到仓库。
 
 ```bash
-OPENAI_API_KEY=your_api_key_here
-OPENAI_MODEL=gpt-5.4-mini
-OPENAI_TIMEOUT_SECONDS=8
+DEEPSEEK_API_KEY=your_deepseek_api_key_here
+DEEPSEEK_MODEL=deepseek-v4-flash
+DEEPSEEK_BASE_URL=https://openrouter.fans/v1
 ```
 
-如果不设置 `OPENAI_API_KEY`，接口 `GET /api/sell_order/insights?days=30` 会返回 `meta.source = "fallback"` 的稳定演示结果。
+如果不设置 `DEEPSEEK_API_KEY`，接口 `GET /api/sell_order/insights?days=30` 会返回 `meta.source = "fallback"` 的稳定演示结果。配置成功并完成模型调用时，接口会返回 `meta.source = "deepseek"`。
 
 ## 我们如何开发协作
 
