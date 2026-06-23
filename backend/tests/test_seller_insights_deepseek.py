@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta
 from decimal import Decimal
 
@@ -90,15 +91,35 @@ def test_deepseek_success_uses_chat_completions(app, monkeypatch):
     monkeypatch.setenv('DEEPSEEK_API_KEY', 'test-key')
     monkeypatch.setenv('DEEPSEEK_MODEL', 'deepseek-v4-flash')
 
-    payload = generate_seller_insight(_metrics(app), client=client)
+    knowledge_snippets = [{
+        "id": "inventory_restocking",
+        "title": "库存补货策略",
+        "topic": "low_stock",
+        "content": "低库存商品需要确认库存和补货。",
+        "score": 100,
+    }]
+
+    payload = generate_seller_insight(
+        _metrics(app),
+        client=client,
+        knowledge_snippets=knowledge_snippets,
+    )
 
     assert payload['meta']['source'] == 'deepseek'
+    assert payload['meta']['ragEnabled'] is True
+    assert payload['meta']['knowledgeSourceCount'] == 1
+    assert payload['meta']['knowledgeSources'][0]['title'] == '库存补货策略'
     assert payload['briefing'] == 'DeepSeek generated briefing'
     assert client.chat.completions.kwargs['model'] == 'deepseek-v4-flash'
-    assert client.chat.completions.kwargs['response_format'] == {'type': 'json_object'}
+    assert 'response_format' not in client.chat.completions.kwargs
+
+    user_message = client.chat.completions.kwargs['messages'][1]
+    prompt_payload = json.loads(user_message['content'])
+    assert prompt_payload['retrievedKnowledge'][0]['title'] == '库存补货策略'
+    assert prompt_payload['retrievedKnowledge'][0]['content'] == '低库存商品需要确认库存和补货。'
 
 
-def test_deepseek_exception_uses_fallback(app, monkeypatch):
+def test_deepseek_exception_returns_fallback_without_rag_enabled(app, monkeypatch):
     class BrokenCompletions:
         def create(self, **kwargs):
             raise RuntimeError('network down')
@@ -111,9 +132,20 @@ def test_deepseek_exception_uses_fallback(app, monkeypatch):
 
     monkeypatch.setenv('DEEPSEEK_API_KEY', 'test-key')
 
-    payload = generate_seller_insight(_metrics(app), client=BrokenClient())
+    payload = generate_seller_insight(
+        _metrics(app),
+        client=BrokenClient(),
+        knowledge_snippets=[{
+            "id": "inventory_restocking",
+            "title": "库存补货策略",
+            "topic": "low_stock",
+            "content": "低库存商品需要确认库存和补货。",
+        }],
+    )
 
     assert payload['meta']['source'] == 'fallback'
+    assert payload['meta']['ragEnabled'] is False
+    assert payload['meta']['knowledgeSources'] == []
 
 
 def test_invalid_deepseek_json_uses_fallback(app, monkeypatch):

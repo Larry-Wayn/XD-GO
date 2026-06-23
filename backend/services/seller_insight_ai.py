@@ -13,13 +13,14 @@ DEFAULT_TIMEOUT_SECONDS = 8
 PROVIDER_SOURCE = "deepseek"
 
 SYSTEM_PROMPT = """
-你是一名电商卖家运营分析师。你会基于结构化店铺指标，输出简洁、可执行、面向卖家的中文运营洞察。
+你是一名电商卖家运营分析师。你会基于结构化店铺指标和检索到的运营知识，输出简洁、可执行、面向卖家的中文运营洞察。
 规则：
-1. 不要编造指标、商品或订单状态。
+1. 不要编造指标、商品、订单状态、平台政策或知识库没有提供的规则。
 2. 每张行动卡必须引用输入中已有的数字证据。
-3. 优先给出具体动作，例如补货、处理待发货订单、优化滞销品，而不是泛泛建议。
-4. 只输出 JSON 对象，不要输出 Markdown 或解释文字。
-5. JSON 对象必须只包含 briefing 和 cards 字段，并符合请求中的 schema。
+3. 如果 retrievedKnowledge 非空，优先结合相关知识给出建议，但不要逐字照抄知识库。
+4. 优先给出具体动作，例如补货、处理待发货订单、优化滞销品，而不是泛泛建议。
+5. 只输出 JSON 对象，不要输出 Markdown 或解释文字。
+6. JSON 对象必须只包含 briefing 和 cards 字段，并符合请求中的 schema。
 """.strip()
 
 
@@ -70,15 +71,16 @@ def _timeout_seconds():
         return DEFAULT_TIMEOUT_SECONDS
 
 
-def _user_prompt(metrics):
+def _user_prompt(metrics, knowledge_snippets=None):
     return json.dumps({
         "metrics": metrics,
+        "retrievedKnowledge": knowledge_snippets or [],
         "requiredOutputSchema": SELLER_INSIGHT_JSON_SCHEMA,
     }, ensure_ascii=False)
 
 
-def generate_seller_insight(metrics, client=None):
-    fallback_payload = build_fallback_insight(metrics)
+def generate_seller_insight(metrics, client=None, knowledge_snippets=None):
+    fallback_payload = build_fallback_insight(metrics, knowledge_sources=knowledge_snippets)
     api_key = os.environ.get("DEEPSEEK_API_KEY")
     if client is None and not api_key:
         return fallback_payload
@@ -93,11 +95,18 @@ def generate_seller_insight(metrics, client=None):
             model=model,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": _user_prompt(metrics)}
+                {"role": "user", "content": _user_prompt(metrics, knowledge_snippets)}
             ],
             temperature=0.2,
         )
         briefing, cards = _parse_model_payload(_extract_output_text(response))
-        return build_insight_payload(briefing, cards, metrics, PROVIDER_SOURCE)
+        return build_insight_payload(
+            briefing,
+            cards,
+            metrics,
+            PROVIDER_SOURCE,
+            knowledge_sources=knowledge_snippets,
+            rag_enabled=bool(knowledge_snippets),
+        )
     except Exception:
         return fallback_payload
