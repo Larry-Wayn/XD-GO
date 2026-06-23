@@ -246,6 +246,278 @@ DEEPSEEK_BASE_URL=https://openrouter.fans/v1
 
 这一改造体现了 FDE 在客户现场常见的交付方式：将客户业务 SOP 和平台经验沉淀为知识库，再接入真实业务数据与大模型，形成可复用的 AI 工作流。
 
+### 4.5 知识库、RAG 与 AI 洞察实现细节
+
+当前项目中的 RAG 不是一个独立聊天机器人，而是嵌入在卖家销售数据页的运营分析流程中。整体链路如下：
+
+```text
+卖家请求 /api/sell_order/insights
+  -> 校验 seller 身份和时间窗口
+  -> 聚合订单、库存、商品销售指标
+  -> 根据指标推断经营问题标签
+  -> 从本地运营知识库检索相关 SOP 片段
+  -> 将 metrics + retrievedKnowledge + 输出 schema 发送给 DeepSeek
+  -> 校验模型 JSON 输出
+  -> 返回 briefing、action cards、metrics 和 meta
+  -> 前端展示 AI 运营洞察、知识增强状态和参考知识来源
+```
+
+#### 4.5.1 本地知识库如何组织
+
+知识库位于：
+
+```text
+backend/knowledge/seller_ops/
+```
+
+当前包含 5 类电商卖家运营知识：
+
+```text
+inventory_restocking.md      库存补货策略
+slow_moving_products.md      滞销商品处理策略
+fulfillment_risk.md          履约风险处理策略
+revenue_concentration.md     收入集中度风险策略
+promotion_playbook.md        促销与组合销售策略
+```
+
+每份 Markdown 文档都使用统一结构：
+
+```text
+# 文档标题
+
+## 适用场景
+## 判断信号
+## 建议动作
+## 注意事项
+```
+
+这样设计的好处是：知识库既能被人直接阅读，也能被程序稳定解析。`backend/services/seller_insight_knowledge.py` 负责读取这些 Markdown 文件，并转成统一的 document 结构：
+
+```python
+{
+    "id": "inventory_restocking",
+    "title": "库存补货策略",
+    "topic": "low_stock",
+    "content": "...",
+    "sourcePath": "..."
+}
+```
+
+其中 `DOCUMENT_TOPICS` 把文档 ID 映射到业务主题，例如 `inventory_restocking -> low_stock`、`fulfillment_risk -> pending_orders`。对前端展示时不会暴露完整 `content` 和 `sourcePath`，只返回 `id/title/topic`，避免把 prompt 上下文和内部路径直接暴露给用户。
+
+#### 4.5.2 RAG 检索如何工作
+
+RAG 检索逻辑位于：
+
+```text
+backend/services/seller_insight_retriever.py
+```
+
+它不是让用户输入一个自然语言问题，而是根据卖家真实经营指标自动推断 query tags：
+
+```text
+pendingOrders > 0                  -> pending_orders
+lowStockProducts 非空              -> low_stock
+slowMovingProducts 非空            -> slow_moving
+revenueConcentration >= 0.7         -> revenue_concentration
+topProducts 或 slowMovingProducts   -> promotion
+```
+
+这更贴近 FDE 场景：客户并不一定会写 prompt，系统应该从业务数据中主动判断“现在该参考哪类 SOP”。
+
+检索器有几个关键实现点：
+
+- 使用 `TAG_PRIORITY` 固定业务优先级，确保检索结果顺序稳定。
+- 使用 `_as_number()` 和 `_as_non_empty_list()` 处理异常 metrics，避免脏数据导致接口崩溃。
+- 先按文档 `topic` 与 query tag 的匹配程度打分，再结合关键词命中加分。
+- 最多返回 3 个 snippets，避免 prompt 过长。
+- 每个 snippet 的 `content` 截断到 1200 字符，控制模型输入成本。
+- 对相同分数的文档做确定性排序，保证测试和演示稳定。
+
+因此当前 RAG 是“轻量规则检索 + 业务标签匹配”，没有引入向量数据库。这个选择是有意的：第一版重点是把客户知识嵌入业务流程，降低部署复杂度，保证面试和本地 demo 稳定可运行。
+
+#### 4.5.3 AI 运营洞察如何生成
+
+后端入口仍然是原来的卖家洞察接口：
+
+```text
+GET /api/sell_order/insights?days=30
+```
+
+路由实现位于：
+
+```text
+backend/views/seller_insights.py
+```
+
+接口做 4 件事：
+
+1. 通过 `token_required` 校验当前用户，并限制只有 `role == "seller"` 能访问。
+2. 使用 `parse_insight_days()` 将时间窗口限制在 7 / 30 / 90 天。
+3. 使用 `get_seller_insight_metrics()` 聚合卖家的订单、收入、库存、热销商品、滞销商品和收入集中度。
+4. 使用 `retrieve_seller_insight_knowledge(metrics)` 检索知识片段，再传给 `generate_seller_insight(metrics, knowledge_snippets=...)`。
+
+模型调用逻辑位于：
+
+```text
+backend/services/seller_insight_ai.py
+```
+
+发送给模型的 user prompt 是结构化 JSON：
+
+```json
+{
+  "metrics": {},
+  "retrievedKnowledge": [],
+  "requiredOutputSchema": {}
+}
+```
+
+其中：
+
+- `metrics` 是实时店铺经营数据。
+- `retrievedKnowledge` 是 RAG 检索到的运营 SOP 片段。
+- `requiredOutputSchema` 要求模型只返回 `briefing` 和 `cards`。
+
+system prompt 中明确要求：
+
+- 不编造指标、商品、订单状态、平台政策或知识库没有提供的规则。
+- 每张行动卡必须引用输入中已有的数字证据。
+- 如果 `retrievedKnowledge` 非空，优先结合相关知识给建议，但不要逐字照抄。
+- 只输出 JSON，不输出 Markdown。
+
+当前项目使用 OpenAI-compatible SDK 调用 DeepSeek/OpenRouter：
+
+```text
+DEEPSEEK_MODEL=deepseek-v4-flash
+DEEPSEEK_BASE_URL=https://openrouter.fans/v1
+```
+
+请求保持兼容的 `chat.completions.create()` 形式，只发送 `model/messages/temperature`，没有强制使用 `response_format`，避免部分 OpenAI-compatible 服务不支持该参数导致真实 key 调用失败。
+
+#### 4.5.4 响应 schema 和 fallback 如何保证稳定
+
+统一响应构造在：
+
+```text
+backend/services/seller_insight_schema.py
+```
+
+模型输出必须满足：
+
+```text
+briefing: 中文经营简报
+cards: 1-5 张行动卡
+```
+
+每张行动卡包含：
+
+```text
+title
+priority: high / medium / low
+recommendation
+reason
+evidence
+metric
+```
+
+后端会对卡片做 normalize：
+
+- 非法 priority 会回落到 `medium`。
+- evidence 会转成最多 4 条字符串。
+- cards 会按优先级排序。
+- 如果模型没有返回合法卡片，会回落到默认建议。
+
+RAG 相关状态放在 `meta` 中：
+
+```json
+{
+  "source": "deepseek",
+  "generatedAt": "2026-06-23T10:00:00Z",
+  "windowDays": 30,
+  "ragEnabled": true,
+  "knowledgeSourceCount": 3,
+  "knowledgeSources": [
+    {
+      "id": "fulfillment_risk",
+      "title": "履约风险处理策略",
+      "topic": "pending_orders"
+    }
+  ]
+}
+```
+
+这里的关键点是：`knowledgeSources` 只暴露来源元信息，不暴露完整知识库内容。这样前端可以展示“参考知识”，但不会把 prompt 上下文完整泄露给用户。
+
+如果没有 API key、模型超时、网络失败、模型返回非法 JSON，后端会进入：
+
+```text
+backend/services/seller_insight_fallback.py
+```
+
+fallback 会基于同一份 metrics 生成 deterministic briefing 和 action cards。即使传入了 knowledge snippets，fallback 也会保持：
+
+```json
+{
+  "source": "fallback",
+  "ragEnabled": false,
+  "knowledgeSourceCount": 0,
+  "knowledgeSources": []
+}
+```
+
+这样做是为了避免误导用户：如果模型没有真正结合知识库生成结果，就不显示“知识增强”。这对 FDE 的客户现场 demo 很重要，因为模型服务不稳定时，系统仍可用，但 UI 不会夸大 AI 能力。
+
+#### 4.5.5 前端如何展示 RAG 洞察
+
+前端集成位于：
+
+```text
+frontend/src/views/seller/salesData.vue
+```
+
+页面顶部的“AI 运营洞察”面板会展示：
+
+- 模型来源 badge：`DeepSeek` / `Fallback`
+- RAG 状态 badge：`知识增强` / `无知识库`
+- 生成时间和分析窗口
+- 中文 briefing
+- 参考知识来源
+- 多张行动建议卡片
+
+前端通过 `insightMeta` 保存后端返回的 RAG 信息：
+
+```js
+{
+  source: '',
+  generatedAt: '',
+  windowDays: 30,
+  ragEnabled: false,
+  knowledgeSourceCount: 0,
+  knowledgeSources: []
+}
+```
+
+`knowledgeSourceTitles` 会从 `meta.knowledgeSources` 中提取标题。如果来源为空或字段不是数组，前端会安全地返回空列表，不会影响原有销售数据页渲染。
+
+#### 4.5.6 技术关键点总结
+
+这个 RAG 改造的关键点不是“接了一个向量库”，而是把 AI 能力稳定嵌入了已有电商业务流程：
+
+- **业务驱动检索**：不是用户提问触发 RAG，而是从订单、库存、履约和商品表现自动推断要检索的运营知识。
+- **知识库可解释**：Markdown SOP 人可读、程序可解析，便于 FDE 在客户现场和业务方共同维护。
+- **轻量可部署**：不改数据库 schema，不引入向量库，降低本地演示和客户环境部署成本。
+- **结构化模型输入**：把 `metrics`、`retrievedKnowledge` 和输出 schema 放进同一个 JSON prompt，减少模型自由发挥空间。
+- **稳定输出 schema**：后端统一 normalize briefing/cards/meta，前端不需要为 openai/deepseek/fallback 写多套逻辑。
+- **真实模型兼容**：使用 OpenAI-compatible chat completions，但不依赖 `response_format` 等兼容性不稳定参数。
+- **可靠 fallback**：模型失败时仍能返回同 schema 的运营洞察，且明确标记 `source=fallback`、`ragEnabled=false`。
+- **前端可解释展示**：卖家不仅看到建议，也能看到建议参考了哪些运营知识来源。
+- **测试覆盖关键路径**：后端测试覆盖 metrics 聚合、知识库读取、检索排序、异常 metrics、DeepSeek 成功、DeepSeek 异常、非法 JSON、seller 权限和 endpoint RAG 传参。
+
+面试中可以这样解释：
+
+> 我在这个项目里没有把 RAG 做成孤立的聊天 demo，而是把它嵌入卖家的销售分析工作流。系统先从真实订单和库存数据中识别经营问题，再检索对应的运营 SOP，最后让大模型结合数据证据和知识片段生成行动建议。这个设计更像 FDE 在客户现场做的事情：把客户知识沉淀成可复用资产，再把它接入真实业务系统，同时保证模型失败时产品仍然稳定可用。
+
 ## 5. 这个项目如何体现 FDE 能力
 
 ### 5.1 从模糊需求到可落地方案

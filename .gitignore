@@ -12,3 +12,6 @@ backend/views/__pychache__/
 backend/views/__pycache__/
 
 backend/migrations/versions/__pycache__/
+__pycache__/
+
+.env

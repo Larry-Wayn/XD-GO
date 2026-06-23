@@ -1,6 +1,7 @@
 from backend import create_app
 from flask_migrate import upgrade
 import MySQLdb
+import os
 from backend.models import *
 
 app = create_app()
@@ -30,4 +31,4 @@ if __name__ == "__main__":
     with app.app_context():
         upgrade()  # This will apply migrations and create tables
 
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=int(os.getenv('PORT', '5001')), debug=True)

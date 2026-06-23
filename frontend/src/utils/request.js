@@ -4,7 +4,7 @@ import { useUserStore } from '@/stores/user'
 import { storeToRefs } from 'pinia'  // 引入 Pinia 的 storeToRefs 方法
 
 const request = axios.create({
-  baseURL: 'http://127.0.0.1:5000',
+  baseURL: 'http://127.0.0.1:5001',
   timeout: 30000
 })
 
