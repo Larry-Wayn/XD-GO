@@ -60,7 +60,7 @@ def _parse_model_payload(raw_text):
 
 def _create_deepseek_client(api_key, base_url, timeout_seconds):
     from openai import OpenAI
-    return OpenAI(api_key=api_key, base_url=base_url, timeout=timeout_seconds)
+    return OpenAI(api_key=api_key, base_url=base_url, timeout=timeout_seconds, max_retries=0)
 
 
 def _timeout_seconds():
