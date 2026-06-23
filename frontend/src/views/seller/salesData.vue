@@ -9,6 +9,9 @@
             <el-tag v-if="insightMeta.source" :type="sourceTagType" size="small">
               {{ sourceLabel }}
             </el-tag>
+            <el-tag :type="ragTagType" size="small">
+              {{ ragLabel }}
+            </el-tag>
           </div>
           <span class="insight-meta" v-if="insightMeta.generatedAt">
             {{ insightMeta.windowDays }} 天分析 · {{ insightMeta.generatedAt }}
@@ -31,6 +34,17 @@
       <div v-else class="insight-content">
         <div class="briefing-box">
           {{ insightBriefing }}
+        </div>
+        <div v-if="knowledgeSourceTitles.length" class="knowledge-source-box">
+          <span class="knowledge-source-label">参考知识：</span>
+          <el-tag
+            v-for="title in knowledgeSourceTitles"
+            :key="title"
+            size="small"
+            effect="plain"
+          >
+            {{ title }}
+          </el-tag>
         </div>
         <el-row :gutter="16" class="action-card-row">
           <el-col
@@ -175,7 +189,10 @@ export default {
     const insightMeta = reactive({
       source: '',
       generatedAt: '',
-      windowDays: 30
+      windowDays: 30,
+      ragEnabled: false,
+      knowledgeSourceCount: 0,
+      knowledgeSources: []
     })
 
     const sourceLabel = computed(() => {
@@ -186,6 +203,14 @@ export default {
     })
 
     const sourceTagType = computed(() => insightMeta.source === 'fallback' ? 'info' : 'success')
+    const ragLabel = computed(() => insightMeta.ragEnabled ? '知识增强' : '无知识库')
+    const ragTagType = computed(() => insightMeta.ragEnabled ? 'success' : 'info')
+    const knowledgeSourceTitles = computed(() => {
+      const sources = Array.isArray(insightMeta.knowledgeSources)
+        ? insightMeta.knowledgeSources
+        : []
+      return sources.map(source => source.title).filter(Boolean)
+    })
 
     const priorityTagType = priority => {
       if (priority === 'high') return 'danger'
@@ -205,7 +230,10 @@ export default {
       Object.assign(insightMeta, {
         source: '',
         generatedAt: '',
-        windowDays: Number(timeRange.value)
+        windowDays: Number(timeRange.value),
+        ragEnabled: false,
+        knowledgeSourceCount: 0,
+        knowledgeSources: []
       })
     }
 
@@ -340,6 +368,9 @@ export default {
       insightMeta,
       sourceLabel,
       sourceTagType,
+      ragLabel,
+      ragTagType,
+      knowledgeSourceTitles,
       priorityTagType,
       priorityText,
       handleTimeRangeChange
@@ -382,6 +413,19 @@ export default {
   border-left: 4px solid #409EFF;
   padding: 14px 16px;
   border-radius: 4px;
+}
+
+.knowledge-source-box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: #606266;
+  font-size: 13px;
+}
+
+.knowledge-source-label {
+  font-weight: 600;
 }
 
 .action-card-row {
