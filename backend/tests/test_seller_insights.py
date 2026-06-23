@@ -207,6 +207,65 @@ def test_seller_insights_endpoint_returns_fallback_payload(app, client, monkeypa
     assert body['data']['cards']
 
 
+def test_seller_insights_endpoint_passes_knowledge_to_ai(app, client, monkeypatch):
+    captured = {}
+    knowledge_snippets = [{
+        "id": "inventory_restocking",
+        "title": "库存补货策略",
+        "topic": "low_stock",
+        "content": "低库存商品需要确认库存和补货。",
+        "sourcePath": "inventory_restocking.md",
+        "score": 100,
+    }]
+
+    def fake_generate_seller_insight(metrics, knowledge_snippets=None):
+        captured["metrics"] = metrics
+        captured["knowledge_snippets"] = knowledge_snippets
+        from backend.services.seller_insight_schema import build_insight_payload
+        return build_insight_payload(
+            "知识增强简报",
+            [{
+                "title": "补货建议",
+                "priority": "high",
+                "recommendation": "优先补货热销低库存商品。",
+                "reason": "低库存商品需要确认库存和补货。",
+                "evidence": ["低库存商品 1 个"],
+                "metric": "low_stock",
+            }],
+            metrics,
+            "deepseek",
+            knowledge_sources=knowledge_snippets,
+            rag_enabled=True,
+        )
+
+    monkeypatch.setattr(
+        "backend.views.seller_insights.generate_seller_insight",
+        fake_generate_seller_insight,
+    )
+    monkeypatch.setattr(
+        "backend.views.seller_insights.retrieve_seller_insight_knowledge",
+        lambda metrics: knowledge_snippets,
+    )
+
+    with app.app_context():
+        _seed_store()
+
+    response = client.get(
+        '/api/sell_order/insights?days=30',
+        headers={'Authorization': f'Bearer {_token("seller_1")}'},
+    )
+
+    body = response.get_json()
+    assert response.status_code == 200
+    assert body['data']['meta']['ragEnabled'] is True
+    assert body['data']['meta']['knowledgeSourceCount'] >= 1
+    assert captured["knowledge_snippets"]
+    assert any(
+        snippet["id"] == "inventory_restocking"
+        for snippet in captured["knowledge_snippets"]
+    )
+
+
 def test_build_fallback_ignores_knowledge_sources_for_stable_degraded_mode(app):
     with app.app_context():
         _seed_store()
