@@ -1162,7 +1162,7 @@ In the FDE key-points section, add:
 Run:
 
 ```bash
-rg -n "sk-|DEEPSEEK_API_KEY=.*sk|OPENAI_API_KEY=.*sk" FDE_PROJECT_GUIDE.md docs backend/knowledge
+rg -n "<real-secret-pattern>" FDE_PROJECT_GUIDE.md docs backend/knowledge
 ```
 
 Expected: no output.
