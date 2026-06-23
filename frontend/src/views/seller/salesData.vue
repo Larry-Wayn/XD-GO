@@ -391,6 +391,7 @@ export default {
 .insight-title {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   font-weight: 600;
 }
@@ -479,6 +480,8 @@ export default {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .card-content {
