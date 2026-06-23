@@ -112,6 +112,9 @@ def test_empty_store_fallback_returns_safe_payload(app):
         payload = build_fallback_insight(metrics)
 
     assert payload['meta']['source'] == 'fallback'
+    assert payload['meta']['ragEnabled'] is False
+    assert payload['meta']['knowledgeSourceCount'] == 0
+    assert payload['meta']['knowledgeSources'] == []
     assert payload['metrics']['orderCount'] == 0
     assert payload['briefing']
     assert payload['cards'][0]['priority'] == 'low'
@@ -197,5 +200,26 @@ def test_seller_insights_endpoint_returns_fallback_payload(app, client, monkeypa
     assert body['code'] == 200
     assert body['data']['meta']['source'] == 'fallback'
     assert body['data']['meta']['windowDays'] == 30
+    assert body['data']['meta']['ragEnabled'] is False
+    assert body['data']['meta']['knowledgeSourceCount'] == 0
+    assert body['data']['meta']['knowledgeSources'] == []
     assert body['data']['briefing']
     assert body['data']['cards']
+
+
+def test_build_fallback_ignores_knowledge_sources_for_stable_degraded_mode(app):
+    with app.app_context():
+        _seed_store()
+        metrics = get_seller_insight_metrics('seller_1', days=30)
+        payload = build_fallback_insight(metrics, knowledge_sources=[{
+            "id": "inventory_restocking",
+            "title": "库存补货策略",
+            "topic": "low_stock",
+            "content": "补货内容",
+            "score": 100,
+        }])
+
+    assert payload['meta']['source'] == 'fallback'
+    assert payload['meta']['ragEnabled'] is False
+    assert payload['meta']['knowledgeSourceCount'] == 0
+    assert payload['meta']['knowledgeSources'] == []

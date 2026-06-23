@@ -11,7 +11,7 @@ def _priority_for_pending(pending_orders, order_count):
     return "medium"
 
 
-def build_fallback_insight(metrics):
+def build_fallback_insight(metrics, knowledge_sources=None):
     window_days = metrics.get("windowDays", 30)
     order_count = metrics.get("orderCount", 0)
     revenue = metrics.get("revenue", 0)

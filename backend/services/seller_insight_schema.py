@@ -75,11 +75,36 @@ def normalize_cards(cards):
     return normalized[:5]
 
 
-def build_insight_payload(briefing, cards, metrics, source):
+def normalize_knowledge_sources(knowledge_sources):
+    if not isinstance(knowledge_sources, list):
+        return []
+
+    normalized = []
+    seen = set()
+    for source in knowledge_sources:
+        if not isinstance(source, dict):
+            continue
+        source_id = str(source.get("id") or "").strip()
+        if not source_id or source_id in seen:
+            continue
+        seen.add(source_id)
+        normalized.append({
+            "id": source_id,
+            "title": str(source.get("title") or "运营知识"),
+            "topic": str(source.get("topic") or "general"),
+        })
+    return normalized[:5]
+
+
+def build_insight_payload(briefing, cards, metrics, source, knowledge_sources=None, rag_enabled=None):
     normalized_cards = normalize_cards(cards)
     if not normalized_cards:
         normalized_cards = [normalize_card({})]
     window_days = int(metrics.get("windowDays", 30) or 30)
+    normalized_sources = normalize_knowledge_sources(knowledge_sources)
+    enabled = bool(normalized_sources) if rag_enabled is None else bool(rag_enabled)
+    if not enabled:
+        normalized_sources = []
     return {
         "briefing": str(briefing or "暂无足够数据生成运营简报。"),
         "cards": normalized_cards,
@@ -87,6 +112,9 @@ def build_insight_payload(briefing, cards, metrics, source):
         "meta": {
             "source": source,
             "generatedAt": utc_now_iso(),
-            "windowDays": window_days
+            "windowDays": window_days,
+            "ragEnabled": enabled,
+            "knowledgeSourceCount": len(normalized_sources),
+            "knowledgeSources": normalized_sources,
         }
     }
