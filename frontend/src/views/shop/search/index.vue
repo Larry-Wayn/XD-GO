@@ -461,6 +461,12 @@ onMounted(() => {
 </script>
 
 <style lang="scss" scoped>
+@mixin text-ellipsis {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .search {
     .search-header {
         background-color: #fff;
@@ -825,9 +831,4 @@ onMounted(() => {
     }
 }
 
-@mixin text-ellipsis {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
 </style>
