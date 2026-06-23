@@ -16,19 +16,42 @@ TAG_KEYWORDS = {
     "promotion": ["促销", "组合销售", "热销", "折扣"],
 }
 
+TAG_POSITIONS = {tag: index for index, tag in enumerate(TAG_PRIORITY)}
+
+
+def _as_number(value):
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value.strip())
+        except (TypeError, ValueError):
+            return 0.0
+    return 0.0
+
+
+def _as_non_empty_list(value):
+    if isinstance(value, list) and value:
+        return value
+    return []
+
 
 def infer_query_tags(metrics):
+    metrics = metrics or {}
     tags = []
-    if int(metrics.get("pendingOrders") or 0) > 0:
-        tags.append("pending_orders")
-    if metrics.get("lowStockProducts") or []:
-        tags.append("low_stock")
-    if metrics.get("slowMovingProducts") or []:
-        tags.append("slow_moving")
-    if float(metrics.get("revenueConcentration") or 0) >= 0.7:
-        tags.append("revenue_concentration")
-    if (metrics.get("topProducts") or []) or (metrics.get("slowMovingProducts") or []):
-        tags.append("promotion")
+    rules = {
+        "pending_orders": lambda data: _as_number(data.get("pendingOrders")) > 0,
+        "low_stock": lambda data: bool(_as_non_empty_list(data.get("lowStockProducts"))),
+        "slow_moving": lambda data: bool(_as_non_empty_list(data.get("slowMovingProducts"))),
+        "revenue_concentration": lambda data: _as_number(data.get("revenueConcentration")) >= 0.7,
+        "promotion": lambda data: bool(
+            _as_non_empty_list(data.get("topProducts"))
+            or _as_non_empty_list(data.get("slowMovingProducts"))
+        ),
+    }
+    for tag in TAG_PRIORITY:
+        if rules[tag](metrics):
+            tags.append(tag)
     return tags
 
 
@@ -71,7 +94,13 @@ def retrieve_seller_insight_knowledge(metrics, documents=None, max_snippets=3):
         if score > 0:
             scored.append((score, document))
 
-    scored.sort(key=lambda item: item[0], reverse=True)
+    scored.sort(
+        key=lambda item: (
+            -item[0],
+            TAG_POSITIONS.get(item[1].get("topic"), len(TAG_PRIORITY)),
+            str(item[1].get("id") or ""),
+        )
+    )
     return [
         _snippet_from_document(document, score)
         for score, document in scored[:max_snippets]
