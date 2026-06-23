@@ -95,7 +95,6 @@ def generate_seller_insight(metrics, client=None):
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": _user_prompt(metrics)}
             ],
-            response_format={"type": "json_object"},
             temperature=0.2,
         )
         briefing, cards = _parse_model_payload(_extract_output_text(response))
