@@ -1,41 +1,34 @@
 import { defineStore } from 'pinia'
+import { getCartList } from '@/api/shop'
 
-// 模拟购物车数据
-const mockCartItems = [
-  {
-    id: 1,
-    name: 'iPhone 15 Pro',
-    price: 7999,
-    image: 'https://via.placeholder.com/200',
-    quantity: 1,
-    selected: true,
-  },
-  {
-    id: 2,
-    name: '华为 Mate 60 Pro',
-    price: 6999,
-    image: 'https://via.placeholder.com/200',
-    quantity: 2,
-    selected: true,
-  },
-  {
-    id: 3,
-    name: '小米 14 Pro',
-    price: 4999,
-    image: 'https://via.placeholder.com/200',
-    quantity: 1,
-    selected: false,
-  },
-]
+const normalizeCartProduct = (product, selected = true) => {
+  const id = product.proid || product.productId || product.id
+
+  return {
+    id,
+    proid: id,
+    name: product.name || product.productName || '',
+    price: Number(product.price || 0),
+    image: product.image || product.imageUrl || '',
+    quantity: Number(product.quantity || 1),
+    selected,
+    specs: product.specs || null,
+  }
+}
 
 export const useCartStore = defineStore('cart', {
   state: () => ({
-    items: mockCartItems,
+    items: [],
+    loading: false,
+    loaded: false,
   }),
 
   getters: {
     // 商品总数
     count: (state) => state.items.reduce((sum, item) => sum + item.quantity, 0),
+
+    // 购物车页使用的商品总数别名
+    totalCount: (state) => state.items.reduce((sum, item) => sum + item.quantity, 0),
 
     // 已选商品数量
     selectedCount: (state) => state.items.filter((item) => item.selected).length,
@@ -51,18 +44,41 @@ export const useCartStore = defineStore('cart', {
   },
 
   actions: {
+    // 使用后端购物车作为唯一数据源，避免 mock id 被提交到真实下单接口。
+    setItems(products = []) {
+      const selectedById = new Map(this.items.map((item) => [item.id, item.selected]))
+      this.items = products.map((product) => {
+        const id = product.proid || product.productId || product.id
+        return normalizeCartProduct(product, selectedById.get(id) ?? true)
+      })
+      this.loaded = true
+    },
+
+    async loadCart() {
+      this.loading = true
+      try {
+        const res = await getCartList()
+        this.setItems(res?.data?.products || [])
+        return this.items
+      } finally {
+        this.loading = false
+      }
+    },
+
     // 添加商品到购物车
     addToCart(product, quantity = 1) {
-      const existItem = this.items.find((item) => item.id === product.id)
+      const normalized = normalizeCartProduct(product)
+      const existItem = this.items.find((item) => item.id === normalized.id)
       if (existItem) {
         existItem.quantity += quantity
       } else {
         this.items.push({
-          ...product,
+          ...normalized,
           quantity,
           selected: true,
         })
       }
+      this.loaded = true
     },
 
     // 从购物车移除商品
@@ -100,6 +116,7 @@ export const useCartStore = defineStore('cart', {
     // 清空购物车
     clearCart() {
       this.items = []
+      this.loaded = true
     },
   },
 })

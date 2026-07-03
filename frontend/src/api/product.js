@@ -3,7 +3,7 @@ import request from '@/utils/request'
 // 获取商品列表
 export function getProductList(params) {
   return request({
-    url: '/products',
+    url: '/api/product/productList',
     method: 'get',
     params
   })
@@ -23,7 +23,7 @@ export function getProductDetail(id) {
 // 获取商品分类
 export function getCategories() {
   return request({
-    url: '/categories',
+    url: '/api/product/category',
     method: 'get'
   })
 }

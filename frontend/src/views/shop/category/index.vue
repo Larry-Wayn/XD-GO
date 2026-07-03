@@ -122,10 +122,11 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowUp, ArrowDown, Grid, List } from '@element-plus/icons-vue'
-// import { getCategories } from '@/api/shop'
+import { getCategories, getProductList } from '@/api/product'
+import { normalizeCategories, normalizeProducts } from '@/utils/catalog'
 
 const route = useRoute()
 const router = useRouter()
@@ -135,41 +136,43 @@ const categories = ref([])
 const currentCategory = ref(null)
 const selectedCategory = ref(null)
 
+const applyCategoryFromQuery = () => {
+  const categoryId = String(route.query.id || route.query.categoryId || '')
+  if (!categoryId) {
+    return
+  }
+
+  for (const category of categories.value) {
+    if (String(category.id) === categoryId) {
+      currentCategory.value = category
+      selectedCategory.value = null
+      return
+    }
+
+    const subCategory = category.children?.find(c => String(c.id) === categoryId)
+    if (subCategory) {
+      currentCategory.value = category
+      selectedCategory.value = subCategory
+      return
+    }
+
+    for (const sub of category.children || []) {
+      const item = sub.children?.find(c => String(c.id) === categoryId)
+      if (item) {
+        currentCategory.value = category
+        selectedCategory.value = item
+        return
+      }
+    }
+  }
+}
+
 const fetchCategories = async () => {
   try {
     const res = await getCategories()
-    categories.value = res.data
-
-    // 根据路由参数设置当前分类
-    const categoryId = route.query.id
-    if (categoryId) {
-      // 查找一级分类
-      const category = categories.value.find(c => c.id === categoryId)
-      if (category) {
-        currentCategory.value = category
-        return
-      }
-
-      // 查找二级分类
-      for (const category of categories.value) {
-        const subCategory = category.children?.find(c => c.id === categoryId)
-        if (subCategory) {
-          currentCategory.value = category
-          selectedCategory.value = subCategory
-          return
-        }
-
-        // 查找三级分类
-        for (const sub of category.children || []) {
-          const item = sub.children?.find(c => c.id === categoryId)
-          if (item) {
-            currentCategory.value = category
-            selectedCategory.value = item
-            return
-          }
-        }
-      }
-    }
+    categories.value = normalizeCategories(res.data?.categories || res.data || [])
+    applyCategoryFromQuery()
+    await fetchProducts()
   } catch (error) {
     console.error('获取分类失败:', error)
   }
@@ -263,20 +266,21 @@ const total = ref(0)
 
 const fetchProducts = async () => {
   try {
-    // TODO: 实现获取商品列表的API调用
-    // const res = await getProducts({
-    //   categoryId: selectedCategory.value?.id || currentCategory.value?.id,
-    //   brandId: selectedBrand.value?.id,
-    //   minPrice: customPriceRange.min || priceRanges[selectedPriceRange.value]?.min,
-    //   maxPrice: customPriceRange.max || priceRanges[selectedPriceRange.value]?.max,
-    //   locationId: selectedLocation.value?.id,
-    //   sortType: sortType.value,
-    //   sortOrder: sortOrder.value,
-    //   page: page.value,
-    //   pageSize: pageSize.value
-    // })
-    // products.value = res.data.list
-    // total.value = res.data.total
+    const res = await getProductList()
+    const selected = selectedCategory.value || currentCategory.value
+    const categoryId = selected?.id
+    const categoryName = selected?.name
+    let list = normalizeProducts(res.data?.list || [])
+
+    if (categoryId || categoryName) {
+      list = list.filter((product) => (
+        product.categoryId === categoryId ||
+        product.categoryName === categoryName
+      ))
+    }
+
+    products.value = list
+    total.value = list.length
   } catch (error) {
     console.error('获取商品列表失败:', error)
   }

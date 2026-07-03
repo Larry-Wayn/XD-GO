@@ -10,18 +10,18 @@
       </div>
 
       <!-- 购物车为空 -->
-      <el-empty v-if="!cartStore.items.length" description="购物车还是空的">
+      <el-empty v-if="!cartStore.loading && !cartStore.items.length" description="购物车还是空的">
         <el-button type="primary" @click="router.push('/')">去逛逛</el-button>
       </el-empty>
 
       <!-- 购物车列表 -->
       <template v-else>
         <div class="cart-list">
-          <el-table :data="cartStore.items" style="width: 100%">
+          <el-table :data="cartStore.items" v-loading="cartStore.loading" style="width: 100%">
             <!-- 选择 -->
             <el-table-column width="55">
               <template #header>
-                <el-checkbox v-model="cartStore.isAllSelected" @change="cartStore.toggleSelectAll" />
+                <el-checkbox :model-value="cartStore.isAllSelected" @change="cartStore.toggleSelectAll" />
               </template>
               <template #default="{ row }">
                 <el-checkbox v-model="row.selected" />
@@ -81,7 +81,7 @@
         <!-- 底部结算栏 -->
         <div class="cart-footer">
           <div class="left">
-            <el-checkbox v-model="cartStore.isAllSelected" @change="cartStore.toggleSelectAll">
+            <el-checkbox :model-value="cartStore.isAllSelected" @change="cartStore.toggleSelectAll">
               全选
             </el-checkbox>
             <el-button type="danger" link @click="handleClearCart">
@@ -104,6 +104,7 @@
 </template>
 
 <script setup name="ShoppingCart">
+import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCartStore } from '@/stores/cart'
 import { ElMessageBox, ElMessage } from 'element-plus'
@@ -111,6 +112,15 @@ import { removeFromCart, clearCart, updateCartQuantity } from '@/api/shop' // �
 
 const router = useRouter()
 const cartStore = useCartStore()
+
+onMounted(async () => {
+  try {
+    await cartStore.loadCart()
+  } catch (error) {
+    console.error(error)
+    ElMessage.error('获取购物车失败，请确认已登录后重试')
+  }
+})
 
 // 查看商品详情
 const handleViewProduct = (product) => {
@@ -129,11 +139,14 @@ const handleRemove = async (item) => {
         type: 'warning',
       }
     )
-    await removeFromCart(item.id) // 修改为直接传递商品ID
-    cartStore.removeFromCart(item.id) // 更新本地状态
+    await removeFromCart(item.proid || item.id)
+    await cartStore.loadCart()
     ElMessage.success('删除成功')
   } catch (error) {
-    console.error(error) // 打印错误信息
+    if (error === 'cancel' || error === 'close') {
+      return
+    }
+    console.error(error)
     ElMessage.error('删除失败，请稍后重试')
   }
 }
@@ -154,11 +167,14 @@ const handleClearCart = async () => {
         type: 'warning',
       }
     )
-    await clearCart() // 调用后端 API 清空购物车
-    cartStore.clearCart() // 更新本地状态
+    await clearCart()
+    cartStore.clearCart()
     ElMessage.success('购物车已清空')
   } catch (error) {
-    console.error(error) // 打印错误信息
+    if (error === 'cancel' || error === 'close') {
+      return
+    }
+    console.error(error)
     ElMessage.error('清空购物车失败，请稍后重试')
   }
 }
@@ -166,11 +182,13 @@ const handleClearCart = async () => {
 // 修改商品数量
 const handleQuantityChange = async (item, quantity) => {
   try {
-    await updateCartQuantity({ proid: item.id, quantity }) // 修改为传递对象
-    cartStore.updateQuantity(item.id, quantity) // 更新本地状态
+    const nextQuantity = Number(quantity)
+    await updateCartQuantity({ proid: item.proid || item.id, quantity: nextQuantity })
+    await cartStore.loadCart()
     ElMessage.success('数量更新成功')
   } catch (error) {
-    console.error(error) // 打印错误信息
+    await cartStore.loadCart().catch(() => {})
+    console.error(error)
     ElMessage.error('更新数量失败，请稍后重试')
   }
 }

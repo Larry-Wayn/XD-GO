@@ -34,8 +34,9 @@
                         <el-button link
                             type="primary"
                             size="small"
-                            @click.prevent="Editorder(scope.row.orderid, scope.row.status)">
-                            Deliver
+                            :disabled="scope.row.status !== 'pending'"
+                            @click.prevent="Editorder(scope.row.orderid)">
+                            {{ getActionText(scope.row.status) }}
                         </el-button>
                     </template>
                 </el-table-column>
@@ -44,31 +45,59 @@
     </div>
 </template>
 <script setup>
-
-import { shipOrder } from '@/api/seller';
 import { useGetOrder, useShiporder } from '@/stores/seller_products';
-import { ref, reactive, watchEffect } from 'vue'
+import { ElMessage } from 'element-plus'
+import { ref, watchEffect, onMounted } from 'vue'
 const loading = ref(true);//加载对象
 const OrderList = ref([])
 const GetOrder = useGetOrder()
 const Shiporder = useShiporder()
 
+const loadOrders = async () => {
+    loading.value = true;
+    try {
+        await GetOrder.getorders();
+        OrderList.value = GetOrder.orderList;
+    } catch (error) {
+        console.error('获取订单失败:', error)
+        ElMessage.error('获取订单失败，请稍后重试');
+    } finally {
+        loading.value = false;
+    }
+}
+
 //整个组件挂载后的行为
 onMounted(() => {
-    GetOrder.getorders();
+    loadOrders();
 });
 
-const Editorder = (id, status) => {
-    console.log(id, status)
-    Shiporder.shipOrderstatus(id, status);
+const getActionText = (status) => {
+    const actionMap = {
+        pending: 'Deliver',
+        shipped: 'Shipped',
+        delivered: 'Completed',
+        unpaid: 'Waiting Payment'
+    }
+    return actionMap[status] || 'Deliver'
+}
+
+const Editorder = async (id) => {
+    try {
+        await Shiporder.shipOrderstatus(id, 'shipped');
+        await loadOrders();
+        ElMessage.success('订单状态已更新为已发货');
+    } catch (error) {
+        console.error('修改订单状态失败:', error)
+        ElMessage.error('修改订单状态失败，请稍后重试');
+    }
 }
 
 //监听数据变化同步数据变化
 watchEffect(() => {
     console.log('orderlist 发生变化:', GetOrder.orderList);
+    OrderList.value = GetOrder.orderList;
     if (GetOrder.orderList.length > 0) {
         loading.value = false;//不要忘记加载
-        OrderList.value = GetOrder.orderList;
     }
 });
 </script>

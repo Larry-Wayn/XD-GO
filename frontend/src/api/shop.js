@@ -121,7 +121,7 @@ export function getSimilarProducts(id, params) {
 // 获取购物车列表
 export function getCartList() {
   return request({
-    url: '/api/shop/cart',
+    url: '/api/cart/list',
     method: 'get',
   })
 }

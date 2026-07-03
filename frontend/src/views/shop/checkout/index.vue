@@ -34,7 +34,7 @@
             <!-- 商品信息 -->
             <div class="section order-section">
                 <h2 class="section-title">商品信息</h2>
-                <el-table :data="cartStore.items.filter(item => item.selected)" style="width: 100%">
+                <el-table :data="selectedItems" style="width: 100%">
                     <el-table-column label="商品信息">
                         <template #default="{ row }">
                             <div class="product-info">
@@ -145,11 +145,11 @@
 </template>
 
 <script setup>
-import { ref, computed, reactive } from 'vue'
+import { ref, computed, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCartStore } from '@/stores/cart'
 import { ElMessage } from 'element-plus'
-import { submitOrder, createWebPay} from '@/api/shop'
+import { submitOrder, createWebPay } from '@/api/shop'
 
 const router = useRouter()
 const cartStore = useCartStore()
@@ -216,43 +216,58 @@ const remark = ref('')
 // 运费
 const shipping = ref(0)
 
+// 当前勾选的真实购物车商品
+const selectedItems = computed(() => cartStore.items.filter(item => item.selected))
+
 // 总金额
 const totalAmount = computed(() => cartStore.totalPrice + shipping.value)
 
 // 是否可以提交订单
-const canSubmit = computed(() => selectedAddressId.value && cartStore.selectedCount > 0)
+const canSubmit = computed(() => selectedAddressId.value && selectedItems.value.length > 0)
+
+onMounted(async () => {
+    try {
+        await cartStore.loadCart()
+    } catch (error) {
+        console.error('获取购物车失败:', error)
+        ElMessage.error('获取购物车失败，请确认已登录后重试')
+    }
+})
 
 // 提交订单相关
 const loading = ref(false)
 const handleSubmitOrder = async () => {
     if (!canSubmit.value) {
-        ElMessage.warning('请选择收货地址')
+        ElMessage.warning(selectedAddressId.value ? '请选择要结算的商品' : '请选择收货地址')
         return
     }
 
     try {
         loading.value = true
+        const payableAmount = totalAmount.value
+        const orderItems = selectedItems.value.map(item => ({
+            productId: item.proid || item.id,
+            quantity: item.quantity
+        }))
+
         // 调用后端提交订单接口
         const res = await submitOrder({
             addressId: selectedAddressId.value,
             paymentMethod: paymentMethod.value,
             remark: remark.value,
-            items: cartStore.items.filter(item => item.selected).map(item => ({
-                productId: item.id,
-                quantity: item.quantity
-            }))
+            items: orderItems
         })
         const orderNo = res.data.order_no
+        await cartStore.loadCart()
         if (paymentMethod.value === 'alipay') {
             // 网站支付
             const payRes = await createWebPay({
                 order_no: orderNo,
-                total_amount: totalAmount.value,
+                total_amount: payableAmount,
                 subject: `订单支付-${orderNo}`
             })
-            window.location.href = payRes.pay_url
             ElMessage.success('下单成功')
-            cartStore.clearCart()
+            window.location.href = payRes.pay_url
         }
     } catch (error) {
         console.error('下单失败:', error)

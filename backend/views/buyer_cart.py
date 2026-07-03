@@ -95,17 +95,23 @@ def get_cart_list(current_user):
         cart = Cart.query.filter_by(userid=current_user.userid).first()
         if not cart:
             return jsonify({
-                "code": 0,
-                "message": "Cart is empty"
-            }), 400
+                "code": 200,
+                "message": "Cart is empty",
+                "data": {
+                    "products": []
+                }
+            }), 200
 
         # Get the cart items
         cart_items = CartItem.query.filter_by(carid=cart.carid).all()
         if not cart_items:
             return jsonify({
-                "code": 0,
-                "message": "Cart is empty"
-            }), 400
+                "code": 200,
+                "message": "Cart is empty",
+                "data": {
+                    "products": []
+                }
+            }), 200
 
         # Get the product details for each item
         products = []
@@ -243,7 +249,7 @@ def update_cart_item_quantity(current_user):
                 "message": "购物车不存在"
             }), 404
 
-        cart_item = CartItem.query.filter_by(carid=cart.carid, proid=data['ids']).first()
+        cart_item = CartItem.query.filter_by(carid=cart.carid, proid=data['proid']).first()
         if not cart_item:
             return jsonify({
                 "code": 404,

@@ -74,7 +74,7 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useCartStore } from '@/stores/cart'
 import { ElMessage } from 'element-plus'
@@ -96,32 +96,30 @@ const loading = ref(false)
 
 // 加入购物车
 const handleAddToCart = async () => {
-  // 检查是否选择了所有规格
-
-  // 构建商品信息
-  const cartItem = {
-    id: curGood.value.productId,
-    name: curGood.value.productName,
-    price: curGood.value.price,
-    image: curGood.value.imagesUrl
+  try {
+    loading.value = true
+    await addToCart({
+      proid: curGood.value.productId,
+      quantity: quantity.value
+    })
+    await cartStore.loadCart()
+    ElMessage.success('已添加到购物车')
+    return true
+  } catch (error) {
+    console.error('加入购物车失败:', error)
+    ElMessage.error('加入购物车失败，请确认已登录后重试')
+    return false
+  } finally {
+    loading.value = false
   }
-
-  // 添加到购物车
-  // 更新仓库
-  cartStore.addToCart(cartItem, quantity.value)
-  // 发请求
-  const res = await addToCart(JSON.stringify({
-    proid: curGood.value.productId,
-    quantity: quantity.value
-  }))
-  console.log(res);
-  ElMessage.success('已添加到购物车')
 }
 
 // 立即购买
-const handleBuyNow = () => {
-  handleAddToCart()
-  router.push('/cart')
+const handleBuyNow = async () => {
+  const added = await handleAddToCart()
+  if (added) {
+    router.push('/cart')
+  }
 }
 </script>
 

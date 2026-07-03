@@ -5,9 +5,30 @@ from .pay import alipay_obj
 import uuid
 from flask import request
 import pprint
+from decimal import Decimal, InvalidOperation
 
 main = Blueprint('buyer_order', __name__)
 temp_orders = {}
+
+
+def _selected_cart_quantities(payload):
+    items = payload.get('items') if isinstance(payload, dict) else None
+    if not isinstance(items, list) or not items:
+        return None
+
+    quantities = {}
+    for item in items:
+        if not isinstance(item, dict):
+            return {}
+        product_id = item.get('productId') or item.get('proid') or item.get('id')
+        try:
+            quantity = int(item.get('quantity', 0))
+        except (TypeError, ValueError):
+            return {}
+        if not product_id or quantity <= 0:
+            return {}
+        quantities[str(product_id)] = quantity
+    return quantities
 
 # 支付接口模拟函数，仅供参考
 def initiate_payment(order_id, totalprice):
@@ -99,6 +120,8 @@ def submit_order(current_user):
                 "message": "Access denied: Only buyers can submit orders"
             }), 403
 
+        data = request.get_json(silent=True) or {}
+
         # 获取购物车信息
         cart = Cart.query.filter_by(userid=current_user.userid).first()
         if not cart:
@@ -114,6 +137,23 @@ def submit_order(current_user):
                 "message": "No items in the cart"
             }), 400
 
+        selected_quantities = _selected_cart_quantities(data)
+        if selected_quantities == {}:
+            return jsonify({
+                "code": 400,
+                "message": "Invalid input: items must include productId and positive quantity"
+            }), 400
+        if selected_quantities is not None:
+            cart_items = [
+                item for item in cart_items
+                if item.proid in selected_quantities
+            ]
+            if not cart_items:
+                return jsonify({
+                    "code": 400,
+                    "message": "Selected products are not in the cart"
+                }), 400
+
         # 按卖家分组商品
         grouped_items = {}
         for item in cart_items:
@@ -124,7 +164,8 @@ def submit_order(current_user):
                     "message": f"Product not found: {item.proid}"
                 }), 404
 
-            if item.quantity > product.stock:
+            quantity = selected_quantities.get(item.proid, item.quantity) if selected_quantities is not None else item.quantity
+            if quantity > product.stock:
                 return jsonify({
                     "code": 400,
                     "message": f"Insufficient stock for product: {product.name}"
@@ -132,7 +173,7 @@ def submit_order(current_user):
 
             if product.userid not in grouped_items:
                 grouped_items[product.userid] = []
-            grouped_items[product.userid].append((item, product))
+            grouped_items[product.userid].append((item, product, quantity))
 
         # 处理每个卖家的订单
         payment_results = []
@@ -143,14 +184,14 @@ def submit_order(current_user):
             cart_item_ids = []  # 记录该订单对应的购物车项 ID
 
             # 在内存中准备订单项
-            for cart_item, product in items:
-                totalprice += product.price * cart_item.quantity
+            for cart_item, product, quantity in items:
+                totalprice += product.price * quantity
                 order_items.append(OrderItem(
                     orderid=order_id,
                     proid=product.proid,
                     productname=product.name,
                     price=product.price,
-                    quantity=cart_item.quantity
+                    quantity=quantity
                 ))
                 cart_item_ids.append(cart_item.id)
 
@@ -168,8 +209,8 @@ def submit_order(current_user):
                 db.session.add(order)
                 db.session.add_all(order_items)
                 # 减少库存
-                for cart_item, product in items:
-                    product.stock -= cart_item.quantity
+                for cart_item, product, quantity in items:
+                    product.stock -= quantity
                 # 删除该订单对应的购物车项
                 CartItem.query.filter(CartItem.id.in_(cart_item_ids)).delete(synchronize_session=False)
                 db.session.commit()
@@ -186,10 +227,15 @@ def submit_order(current_user):
                     "status": "cancelled"
                 })
 
+        first_order_no = payment_results[0]["orderid"] if payment_results else ""
+
         return jsonify({
             "code": 200,
             "message": "Order submission complete",
-            "data": payment_results
+            "data": {
+                "order_no": first_order_no,
+                "orders": payment_results
+            }
         }), 200
 
     except Exception as e:
@@ -269,12 +315,33 @@ def confirm_delivery(current_user):
 @token_required
 def web_pay(current_user):
     """电脑网站支付"""
+    data = request.get_json(silent=True) or {}
+    order_no = data.get('order_no') or str(uuid.uuid4())
+    total_amount = data.get('total_amount')
+    subject = data.get('subject') or f"订单支付-{order_no}"
+
+    order = Order.query.filter_by(orderid=order_no, userid=current_user.userid).first()
+    if order:
+        total_amount = total_amount or str(order.totalprice)
+    elif data.get('order_no'):
+        return jsonify({
+            "status": 0,
+            "message": f"Order not found with order_no: {order_no}"
+        }), 404
+
+    try:
+        Decimal(str(total_amount))
+    except (InvalidOperation, TypeError, ValueError):
+        return jsonify({
+            "status": 0,
+            "message": "Invalid input: total_amount is required"
+        }), 400
+
     alipay = alipay_obj()
-    order_no = str(uuid.uuid4())
     order_string = alipay.api_alipay_trade_page_pay(
         out_trade_no=order_no,
-        total_amount=request.json.get('total_amount'),
-        subject=request.json.get('subject'),
+        total_amount=total_amount,
+        subject=subject,
         return_url=url_for('buyer_order.alipay_success_result', _external=True),
         notify_url=url_for('buyer_order.alipay_notify', _external=True)
     )

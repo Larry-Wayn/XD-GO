@@ -97,8 +97,10 @@ export const useGetOrder = defineStore('getOrder', () => {
             const res = await getOrderList();
             console.log('获取订单成功:', res);
             orderList.value = res.data.orders
+            return res
         } catch (error) {
             console.log('获取订单失败', error);
+            throw error
         }
     }
     return {
@@ -134,8 +136,10 @@ export const useShiporder = defineStore('shiporderstatus', () => {
         try {
             const res = await shipOrder(id, status);
             orderstatus.value = res.data
+            return res
         } catch (error) {
-            console.log('获取分类id失败', error)
+            console.log('修改订单状态失败', error)
+            throw error
         }
     }
     return {
